@@ -21,6 +21,9 @@ import jakarta.persistence.EntityManagerFactory;
 @EnableJpaRepositories(entityManagerFactoryRef = "entityManagerFactory", transactionManagerRef = "transactionManager", basePackages = {
 		("com.nublo.loadservice.config"), ("com.nublo.loadservice.dao.model"),
 		("com.nublo.loadservice.dbrepository") })
+
+
+
 public class DBConfig {
 
 	@Bean(name = "dataSource")
