@@ -1,0 +1,114 @@
+/**
+ * 
+ */
+package com.nublo.loadservice.sevices.impl;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Optional;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+
+import com.nublo.loadservice.api.model.LoadCardBalanceRequest;
+import com.nublo.loadservice.dao.model.AccountBalance;
+import com.nublo.loadservice.dao.model.Card;
+import com.nublo.loadservice.dao.model.CardAccountLink;
+import com.nublo.loadservice.dao.model.pk.BalancePK;
+import com.nublo.loadservice.dao.model.pk.CardPK;
+import com.nublo.loadservice.dbrepository.AccountBalanceRepository;
+import com.nublo.loadservice.dbrepository.AccountRepository;
+import com.nublo.loadservice.dbrepository.CardRepository;
+import com.nublo.loadservice.dbrepository.ICardAccountLinkRepository;
+import com.nublo.loadservice.services.ILoadCardService;
+
+import jakarta.transaction.Transactional;
+
+/**
+ * @author DELL
+ *
+ */
+@Service
+@Transactional
+public class LoadCardBalanceServiceImpl implements ILoadCardService {
+
+	@Autowired
+	private CardRepository cardRepo;
+
+	@SuppressWarnings("unused")
+	@Autowired
+	private AccountRepository accountRepo;
+
+	@Autowired
+	private AccountBalanceRepository accBalanceRepo;
+	
+	@Autowired
+	private ICardAccountLinkRepository cardAccLinkRepo;
+
+	@Override
+	public void loadCardBalance(LoadCardBalanceRequest loadCardRequest) {
+		String bankId = loadCardRequest.getBankId();
+		String cardNumber = loadCardRequest.getCardNumber();
+		try {
+			CardPK cardPk = new CardPK();
+			cardPk.setBankId(bankId);
+			cardPk.setDeviceNumber(cardNumber);
+			Optional<Card> cardOption = cardRepo.findById(cardPk);
+			if (!cardOption.isEmpty()) {
+				Card card = cardOption.get();
+				if (card.getStatusCode() == 0) {
+					Date cardExpiryDt = card.getExpiryDate();
+					SimpleDateFormat sdf = new SimpleDateFormat("yyMM");
+					String strCardExpiryDt = sdf.format(cardExpiryDt);
+					if (strCardExpiryDt.equals(loadCardRequest.getExpiryDate())) {
+						Date currentDate = new Date();
+						if (currentDate.before(cardExpiryDt)) {
+							CardAccountLink cardAccountLink = getCardAccLink(bankId, cardNumber);
+							if (cardAccountLink != null) {
+								AccountBalance accBalance = getAccountBalance(bankId,
+										cardAccountLink.getId().getAccNumber());
+								Double balanceAmt = (accBalance.getBalance() - accBalance.getCurrentAuth());
+								balanceAmt = balanceAmt + loadCardRequest.getLoadAmount();
+								accBalance.setBalance(balanceAmt);
+								accBalance.setCurrentAuth(0.0);
+								accBalanceRepo.save(accBalance);
+								loadCardRequest.setBalance(accBalance.getBalance());
+								loadCardRequest.setErrorCode("000");
+							}
+						} else {
+							loadCardRequest.setErrorCode("014");
+							loadCardRequest.setErrDescription("Card is Expired");
+						}
+					} else {
+						loadCardRequest.setErrorCode("014");
+						loadCardRequest.setErrDescription("Card is Expired");
+					}
+				} else {
+					loadCardRequest.setErrorCode("015");
+					loadCardRequest.setErrDescription("Card is inactive");
+				}
+			} else {
+				loadCardRequest.setErrorCode("096");
+				loadCardRequest.setErrDescription("Invalid Card");
+			}
+		} catch (Exception e) {
+			e.printStackTrace();
+			loadCardRequest.setErrorCode("001");
+		}
+	}
+
+	private AccountBalance getAccountBalance(String bankId, String accNumber) {
+		BalancePK balancePk = new BalancePK();
+		balancePk.setAccNumber(accNumber);
+		balancePk.setBankId(bankId);
+		Optional<AccountBalance> accBalance = accBalanceRepo.findById(balancePk);
+		return accBalance.get();
+//		return null;
+	}
+
+	private CardAccountLink getCardAccLink(String bankId, String cardNumber) throws Exception {
+		CardAccountLink cardAccLink = cardAccLinkRepo.getCardAccountLink(bankId, cardNumber);
+		return cardAccLink;
+	}
+
+}
